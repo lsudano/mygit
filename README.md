@@ -1,15 +1,27 @@
-#  MyGit
+# MyGit
 
-A simple implementation of Git features in Python, built from scratch for educational purposes.
+A simple implementation of Git features in Python, built from scratch to understand how version control works under the hood.
 
-## Features
+## Features Implemented
 
-- Track file changes
-- Initialize repositories
-- Basic commit system
-- Learn how Git works under the hood
+- Repository initialization (`init`)
+- Object storage using SHA-1 hashes (`hash-object`)
+- Object inspection (`cat-file`)
 
-##How to Run
+## Upcoming Features
+
+- Tree and commit creation (`write-tree`, `commit`)
+- Simple version tracking
+- Commit history/log
+
+## How to Run
 
 ```bash
-python mygit.py
+# Initialize your repo
+python mygit.py init
+
+# Hash a file
+python mygit.py hash-object <filename>
+
+# Print a stored object
+python mygit.py cat-file <hash>
