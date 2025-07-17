@@ -1,6 +1,5 @@
 # MyGit
 
-<<<<<<< HEAD
 A simple implementation of Git features in Python, built from scratch to understand how version control works under the hood.
 
 ## Features Implemented
@@ -26,7 +25,7 @@ python mygit.py hash-object <filename>
 
 # Print a stored object
 python mygit.py cat-file <hash>
-=======
+
 A minimal Git-like version control system written in Python.
 
 This is a personal project made for learning how Git works.  
