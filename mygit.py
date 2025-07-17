@@ -2,6 +2,7 @@
 import os
 import sys
 import hashlib
+from pathlib import Path
 
 GIT_DIR = ".mygit"
 
@@ -24,6 +25,14 @@ def main():
             print("Usage: mygit.py cat-file <hash>")
             return
         cat_file(sys.argv[2])
+    elif command == "write-tree":
+        write_tree()
+    elif command == "commit":
+        if len(sys.argv) < 3:
+            print("Usage: mygit.py commit <message>")
+            return
+        message = sys.argv[2]
+        do_commit(message)
     else:
         print(f"Unknown command: {command}")
 
@@ -45,6 +54,7 @@ def hash_object(filename):
             f.write(store)
 
     print(oid)
+    return oid
 
 def cat_file(oid):
     path = f"{GIT_DIR}/objects/{oid}"
@@ -57,6 +67,59 @@ def cat_file(oid):
 
     content = obj.split(b'\x00', 1)[1]
     sys.stdout.buffer.write(content)
+
+def write_tree():
+    entries = []
+
+    for path in sorted(Path(".").rglob("*")):
+        if ".mygit" in path.parts or path.is_dir():
+            continue
+
+        with open(path, "rb") as f:
+            data = f.read()
+
+        header = f"blob {len(data)}\0".encode()
+        store = header + data
+        oid = hashlib.sha1(store).hexdigest()
+
+        obj_path = f"{GIT_DIR}/objects/{oid}"
+        if not os.path.exists(obj_path):
+            with open(obj_path, "wb") as out:
+                out.write(store)
+
+        entries.append(f"100644 blob {oid} {path.as_posix()}")
+
+    result = "\n".join(entries).encode()
+    tree_header = f"tree {len(result)}\0".encode()
+    full_tree = tree_header + result
+
+    tree_oid = hashlib.sha1(full_tree).hexdigest()
+    tree_path = f"{GIT_DIR}/objects/{tree_oid}"
+
+    if not os.path.exists(tree_path):
+        with open(tree_path, "wb") as f:
+            f.write(full_tree)
+
+    print(tree_oid)
+    return tree_oid
+
+def do_commit(message):
+    tree = write_tree()
+    content = f"tree {tree}\n\n{message}\n".encode()
+
+    header = f"commit {len(content)}\0".encode()
+    full_commit = header + content
+    oid = hashlib.sha1(full_commit).hexdigest()
+
+    path = f"{GIT_DIR}/objects/{oid}"
+    if not os.path.exists(path):
+        with open(path, "wb") as f:
+            f.write(full_commit)
+
+    with open(f"{GIT_DIR}/HEAD", "w") as f:
+        f.write(oid + "\n")
+
+    print(oid)
 
 if __name__ == "__main__":
     main()
