@@ -28,6 +28,14 @@ def main():
         cat_file(sys.argv[2])
     elif command == "write-tree":
         write_tree()
+<<<<<<< HEAD
+=======
+    elif command == "checkout":
+        if len(sys.argv) < 3:
+            print("usage: mygit.py checkout <commit_hash")
+            return
+        checkout(sys.argv[2])
+>>>>>>> 3686910 (Update mygit.py and README)
     elif command == "commit":
         if len(sys.argv) < 3:
             print("Usage: mygit.py commit <message>")
@@ -272,5 +280,66 @@ def status():
     for path in untracked:
         print(f"  {path}")
 
+<<<<<<< HEAD
+=======
+def checkout(commit_hash):
+    commit_path = os.path.join(GIT_DIR, "objects", commit_hash)
+    if not os.path.exists(commit_path):
+        print(f"Commit {commit_hash} not found.")
+        return
+
+    with open(commit_path, "rb") as f:
+        commit_data = f.read()
+
+    try:
+        content = commit_data.split(b'\x00', 1)[1].decode()
+    except:
+        print("Invalid commit format")
+        return
+
+    # Get tree hash
+    tree_line = content.splitlines()[0]
+    assert tree_line.startswith("tree "), "Not a valid commit"
+    tree_hash = tree_line[5:]
+
+    # Read the tree object
+    tree_path = os.path.join(GIT_DIR, "objects", tree_hash)
+    if not os.path.exists(tree_path):
+        print(f"Tree object {tree_hash} not found.")
+        return
+
+    with open(tree_path, "rb") as f:
+        tree_data = f.read()
+
+    tree_content = tree_data.split(b'\x00', 1)[1].decode()
+
+    # Collect files in the tree
+    files_in_tree = []
+    for line in tree_content.splitlines():
+        _, _, oid, filename = line.split(" ", 3)
+        files_in_tree.append((filename, oid))
+
+    # Only remove files that will be overwritten by the checkout
+    for filename, _ in files_in_tree:
+        if os.path.exists(filename):
+            os.remove(filename)
+
+    # Write files from tree
+    for filename, oid in files_in_tree:
+        obj_path = os.path.join(GIT_DIR, "objects", oid)
+        with open(obj_path, "rb") as f:
+            obj_data = f.read()
+        file_data = obj_data.split(b'\x00', 1)[1]
+
+        with open(filename, "wb") as f:
+            f.write(file_data)
+
+    # Update HEAD
+    with open(os.path.join(GIT_DIR, "HEAD"), "w") as f:
+        f.write(commit_hash)
+
+    print(f"Checked out commit {commit_hash}")
+
+>>>>>>> 3686910 (Update mygit.py and README)
 if __name__ == "__main__":
     main()
