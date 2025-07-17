@@ -28,14 +28,11 @@ def main():
         cat_file(sys.argv[2])
     elif command == "write-tree":
         write_tree()
-<<<<<<< HEAD
-=======
     elif command == "checkout":
         if len(sys.argv) < 3:
             print("usage: mygit.py checkout <commit_hash")
             return
         checkout(sys.argv[2])
->>>>>>> 3686910 (Update mygit.py and README)
     elif command == "commit":
         if len(sys.argv) < 3:
             print("Usage: mygit.py commit <message>")
@@ -51,11 +48,19 @@ def main():
         add(sys.argv[2])
     elif command == "status":
         status()
+    elif command == "branch":
+        if len(sys.argv) < 3:
+            print("Usage: mygit.py branch <branch-name>")
+            return
+        create_branch(sys.argv[2])
     else:
         print(f"Unknown command: {command}")
 
 def init():
     os.makedirs(f"{GIT_DIR}/objects", exist_ok=True)
+    os.makedirs(f"{GIT_DIR}/refs/heads",exist_ok=True)
+    with open(f"{GIT_DIR}/HEAD", "w") as f:
+        f.write("ref: refs/heads/main")
     print("Initialized empty MyGit repository in .mygit/")
 
 def hash_object(filename):
@@ -86,36 +91,34 @@ def cat_file(oid):
     content = obj.split(b'\x00', 1)[1]
     sys.stdout.buffer.write(content)
 
+def write_tree_object(entries):
+    data = "\n".join(entries).encode()
+    header = f"tree {len(data)}\0".encode()
+    full_tree = header + data
+    oid = hashlib.sha1(full_tree).hexdigest()
+    path = f"{GIT_DIR}/objects/{oid}"
+    if not os.path.exists(path):
+        with open(path, "wb") as f:
+            f.write(full_tree)
+    return oid
+
 def write_tree():
     if not os.path.exists(INDEX_FILE):
         print("Nothing to write. Index is empty.")
         return None
 
     entries = []
-
     with open(INDEX_FILE, "r") as index:
         for line in index:
             oid, filename = line.strip().split(" ", 1)
             entries.append(f"100644 blob {oid} {filename}")
 
-    result = "\n".join(entries).encode()
-    tree_header = f"tree {len(result)}\0".encode()
-    full_tree = tree_header + result
-
-    tree_oid = hashlib.sha1(full_tree).hexdigest()
-    tree_path = f"{GIT_DIR}/objects/{tree_oid}"
-
-    if not os.path.exists(tree_path):
-        with open(tree_path, "wb") as f:
-            f.write(full_tree)
-
+    tree_oid = write_tree_object(entries)
     print(tree_oid)
     return tree_oid
 
 def do_commit(message):
-    os.makedirs(f"{GIT_DIR}/objects", exist_ok=True)
 
-    # Load index
     index_path = f"{GIT_DIR}/index"
     if not os.path.exists(index_path):
         print("Nothing to write. Index is empty.")
@@ -135,12 +138,19 @@ def do_commit(message):
     with open(f"{GIT_DIR}/objects/{tree_oid}", "wb") as f:
         f.write(tree_object)
 
-    # Read HEAD to find parent
-    parent = ""
     head_path = f"{GIT_DIR}/HEAD"
+    parent = ""
+
     if os.path.exists(head_path):
         with open(head_path, "r") as f:
-            parent = f.read().strip()
+            head_content = f.read().strip()
+            if head_content.startswith("ref: "):
+                ref_path = f"{GIT_DIR}/{head_content[5:]}"
+                if os.path.exists(ref_path):
+                    with open(ref_path, "r") as rf:
+                        parent = rf.read().strip()
+            else:
+                parent = head_content  # detached HEAD
 
     commit_content = f"tree {tree_oid}\n"
     if parent:
@@ -154,10 +164,15 @@ def do_commit(message):
     with open(f"{GIT_DIR}/objects/{commit_oid}", "wb") as f:
         f.write(commit_data)
 
-    with open(head_path, "w") as f:
-        f.write(commit_oid)
+    if head_content.startswith("ref: "):
+        ref_path = f"{GIT_DIR}/{head_content[5:]}"
+        os.makedirs(os.path.dirname(ref_path), exist_ok=True)
+        with open(ref_path, "w") as f:
+            f.write(commit_oid)
+    else:
+        with open(head_path, "w") as f:
+            f.write(commit_oid)  # detached HEAD update
 
-    # Clear index
     os.remove(index_path)
 
     print(commit_oid)
@@ -196,17 +211,7 @@ def log():
             break
 
 def add(filename):
-    os.makedirs(f"{GIT_DIR}/objects", exist_ok=True)
-    with open(filename, "rb") as f:
-        data = f.read()
-
-    header = f"blob {len(data)}\0".encode()
-    store = header + data
-    oid = hashlib.sha1(store).hexdigest()
-
-    # Save object
-    with open(f"{GIT_DIR}/objects/{oid}", "wb") as out:
-        out.write(store)
+    oid = hash_object(filename)
 
     # Update index
     index_path = f"{GIT_DIR}/index"
@@ -217,7 +222,6 @@ def status():
     index_path = f"{GIT_DIR}/index"
     head_path = f"{GIT_DIR}/HEAD"
 
-    # Read index
     index = {}
     if os.path.exists(index_path):
         with open(index_path) as f:
@@ -225,7 +229,6 @@ def status():
                 oid, path = line.strip().split(" ", 1)
                 index[path] = oid
 
-    # Read HEAD commit tree
     head_tree = {}
     if os.path.exists(head_path):
         with open(head_path) as f:
@@ -246,7 +249,6 @@ def status():
                             _, _, oid, path = parts
                             head_tree[path] = oid
 
-    # Check working dir
     all_files = set()
     for path in Path(".").rglob("*"):
         if path.is_file() and GIT_DIR not in path.parts:
@@ -280,26 +282,34 @@ def status():
     for path in untracked:
         print(f"  {path}")
 
-<<<<<<< HEAD
-=======
 def checkout(commit_hash):
-    commit_path = os.path.join(GIT_DIR, "objects", commit_hash)
+    ref_path = os.path.join(GIT_DIR, "refs", "heads", commit_hash)
+    if os.path.exists(ref_path):
+        with open(ref_path, "r") as f:
+            commit_hash = f.read().strip()
+        # update HEAD to track this branch
+        with open(os.path.join(GIT_DIR, "HEAD"), "w") as f:
+            f.write(f"ref: refs/heads/{commit_hash}")
+    commit_path = f"{GIT_DIR}/objects/{commit_hash}"
     if not os.path.exists(commit_path):
+
         print(f"Commit {commit_hash} not found.")
         return
 
     with open(commit_path, "rb") as f:
         commit_data = f.read()
 
-    try:
-        content = commit_data.split(b'\x00', 1)[1].decode()
-    except:
+    split = commit_data.split(b'\x00', 1)
+    if len(split) != 2:
         print("Invalid commit format")
         return
+    content = split[1].decode()
 
     # Get tree hash
     tree_line = content.splitlines()[0]
-    assert tree_line.startswith("tree "), "Not a valid commit"
+    if not tree_line.startswith("tree "):
+        print("Not a valid commit")
+        return
     tree_hash = tree_line[5:]
 
     # Read the tree object
@@ -313,33 +323,56 @@ def checkout(commit_hash):
 
     tree_content = tree_data.split(b'\x00', 1)[1].decode()
 
-    # Collect files in the tree
-    files_in_tree = []
+    tracked_files = []
     for line in tree_content.splitlines():
         _, _, oid, filename = line.split(" ", 3)
-        files_in_tree.append((filename, oid))
+        tracked_files.append((filename, oid))
 
-    # Only remove files that will be overwritten by the checkout
-    for filename, _ in files_in_tree:
+    # Only remove files that differ from the new commit's version
+    for filename, oid in tracked_files:
         if os.path.exists(filename):
-            os.remove(filename)
+            with open(filename, "rb") as f:
+                existing = f.read()
+            header = f"blob {len(existing)}\0".encode()
+            current_oid = hashlib.sha1(header + existing).hexdigest()
+            if current_oid != oid:
+                os.remove(filename)
 
-    # Write files from tree
-    for filename, oid in files_in_tree:
+    # Write checked out files
+    for filename, oid in tracked_files:
         obj_path = os.path.join(GIT_DIR, "objects", oid)
         with open(obj_path, "rb") as f:
             obj_data = f.read()
         file_data = obj_data.split(b'\x00', 1)[1]
-
         with open(filename, "wb") as f:
             f.write(file_data)
 
-    # Update HEAD
     with open(os.path.join(GIT_DIR, "HEAD"), "w") as f:
         f.write(commit_hash)
 
     print(f"Checked out commit {commit_hash}")
 
->>>>>>> 3686910 (Update mygit.py and README)
+def create_branch(name):
+    head_path = f"{GIT_DIR}/HEAD"
+    with open(head_path, "r") as f:
+        ref = f.read().strip()
+
+    if ref.startswith("ref: "):
+        ref_path = f"{GIT_DIR}/{ref[5:]}"
+        if os.path.exists(ref_path):
+            with open(ref_path, "r") as f:
+                oid = f.read().strip()
+        else:
+            print("No commits yet.")
+            return
+    else:
+        oid = ref
+
+    branch_path = f"{GIT_DIR}/refs/heads/{name}"
+    with open(branch_path, "w") as f:
+        f.write(oid)
+
+    print(f"Created branch {name} at {oid}")
+
 if __name__ == "__main__":
     main()

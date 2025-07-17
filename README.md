@@ -1,52 +1,26 @@
 # MyGit
 
-A simple implementation of Git features in Python, built from scratch to understand how version control works under the hood.
+MyGit is a minimal, from-scratch Git clone built in Python. It implements essential version control functionality using a simple `.mygit` directory and mimics Git’s object model and CLI.
 
-## Features Implemented
+## Features
 
-- Repository initialization (`init`)
-- Object storage using SHA-1 hashes (`hash-object`)
-- Object inspection (`cat-file`)
+- `mygit.py init` — Initialize a new repository
+- `mygit.py add <filename>` — Add files to the staging index
+- `mygit.py commit <message>` — Save a snapshot of staged files
+- `mygit.py log` — View the commit history
+- `mygit.py status` — See staged, modified, and untracked files
+- `mygit.py hash-object <filename>` — Store raw file as a Git object
+- `mygit.py cat-file <hash>` — Read the contents of an object
+- `mygit.py write-tree` — Write current staging index to a tree
+- `mygit.py checkout <commit-hash>` — Restore working directory to a previous commit
+- `mygit.py branch <name>` — Create a new branch from current commit
 
-## Upcoming Features
-
-- Tree and commit creation (`write-tree`, `commit`)
-- Simple version tracking
-- Commit history/log
-
-## How to Run
-
-```bash
-# Initialize your repo
-python mygit.py init
-
-# Hash a file
-python mygit.py hash-object <filename>
-
-# Print a stored object
-python mygit.py cat-file <hash>
-
-A minimal Git-like version control system written in Python.
-
-This is a personal project made for learning how Git works.  
-It supports basic commands like
-
-- `init`
-- `add`
-- `commit`
-- `status`
-- `log`
-- `checkout`
-
----
-
-## Usage
+## Example Workflow
 
 ```bash
-python mygit.py init
-python mygit.py add file.txt
-python mygit.py commit "Your commit message"
-python mygit.py status
-python mygit.py log
-python mygit.py checkout <commit_hash>
->>>>>>> 3686910 (Update mygit.py and README)
+./mygit.py init
+echo "Hello" > file.txt
+./mygit.py add file.txt
+./mygit.py commit "Initial commit"
+./mygit.py log
+
