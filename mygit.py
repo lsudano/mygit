@@ -30,7 +30,7 @@ def main():
         write_tree()
     elif command == "checkout":
         if len(sys.argv) < 3:
-            print("usage: mygit.py checkout <commit_hash")
+            print("usage: mygit.py checkout <commit_hash>")
             return
         checkout(sys.argv[2])
     elif command == "commit":
@@ -49,10 +49,21 @@ def main():
     elif command == "status":
         status()
     elif command == "branch":
+        if len(sys.argv) == 2:
+            # list all branches
+            branches_dir = os.path.join(GIT_DIR, "refs", "heads")
+            for branch in os.listdir(branches_dir):
+                print(branch)
+        elif len(sys.argv) == 3:
+            # create a branch
+            create_branch(sys.argv[2])
+        else:
+            print("Usage: mygit.py branch [<name>]")
+    elif command == "switch":
         if len(sys.argv) < 3:
-            print("Usage: mygit.py branch <branch-name>")
+            print("Usage: mygit.py switch <branch>")
             return
-        create_branch(sys.argv[2])
+        switch(sys.argv[2])
     else:
         print(f"Unknown command: {command}")
 
@@ -170,8 +181,13 @@ def do_commit(message):
         with open(ref_path, "w") as f:
             f.write(commit_oid)
     else:
-        with open(head_path, "w") as f:
-            f.write(commit_oid)  # detached HEAD update
+        if parent.startswith("refs/heads/"):
+            branch_path = os.path.join(GIT_DIR, parent)
+            with open(branch_path, "w") as f:
+                f.write(commit_oid)
+        else:
+            with open(head_path, "w") as f:
+                f.write(commit_oid)
 
     os.remove(index_path)
 
@@ -184,10 +200,25 @@ def log():
         return
 
     with open(head_path, "r") as f:
-        oid = f.read().strip()
+        ref = f.read().strip()
+
+    # Resolve HEAD to actual commit hash
+    if ref.startswith("ref: "):
+        ref_path = os.path.join(GIT_DIR, ref[5:])
+        if not os.path.exists(ref_path):
+            print("Branch ref does not exist.")
+            return
+        with open(ref_path, "r") as rf:
+            oid = rf.read().strip()
+    else:
+        oid = ref
 
     while oid:
         path = f"{GIT_DIR}/objects/{oid}"
+        if not os.path.exists(path):
+            print(f"Missing commit object: {oid}")
+            break
+
         with open(path, "rb") as f:
             obj = f.read()
 
@@ -205,10 +236,7 @@ def log():
                 parent = line.split(" ", 1)[1]
                 break
 
-        if parent:
-            oid = parent
-        else:
-            break
+        oid = parent if parent else None
 
 def add(filename):
     oid = hash_object(filename)
@@ -229,58 +257,63 @@ def status():
                 oid, path = line.strip().split(" ", 1)
                 index[path] = oid
 
-    head_tree = {}
+    committed = {}
     if os.path.exists(head_path):
         with open(head_path) as f:
-            head_commit_oid = f.read().strip()
-        commit_path = f"{GIT_DIR}/objects/{head_commit_oid}"
+            ref = f.read().strip()
+
+        if ref.startswith("ref: "):
+            ref_path = os.path.join(GIT_DIR, ref[5:])
+            if os.path.exists(ref_path):
+                with open(ref_path) as f:
+                    oid = f.read().strip()
+            else:
+                oid = ref
+        else:
+            oid = ref
+
+        commit_path = f"{GIT_DIR}/objects/{oid}"
         if os.path.exists(commit_path):
-            with open(commit_path, "rb") as f:
-                commit = f.read().split(b"\x00", 1)[1].decode()
-            for line in commit.splitlines():
+            commit_data = open(commit_path, "rb").read().split(b"\x00", 1)[1].decode()
+            for line in commit_data.splitlines():
                 if line.startswith("tree "):
-                    tree_oid = line[5:].strip()
+                    tree_oid = line[5:]
                     tree_path = f"{GIT_DIR}/objects/{tree_oid}"
-                    with open(tree_path, "rb") as f:
-                        tree = f.read().split(b"\x00", 1)[1].decode()
-                    for entry in tree.splitlines():
-                        parts = entry.split(" ")
-                        if len(parts) == 4:
-                            _, _, oid, path = parts
-                            head_tree[path] = oid
+                    tree_data = open(tree_path, "rb").read().split(b"\x00", 1)[1].decode()
+                    for entry in tree_data.splitlines():
+                        _, _, blob_oid, path = entry.split(" ", 3)
+                        committed[path] = blob_oid
 
-    all_files = set()
-    for path in Path(".").rglob("*"):
-        if path.is_file() and GIT_DIR not in path.parts:
-            all_files.add(str(path))
+    all_files = {str(p) for p in Path(".").rglob("*") if p.is_file() and GIT_DIR not in p.parts}
 
-    staged = []
-    unstaged = []
-    untracked = []
+    staged, unstaged, untracked = [], [], []
 
     for path in sorted(all_files):
         with open(path, "rb") as f:
             data = f.read()
         header = f"blob {len(data)}\0".encode()
-        oid = hashlib.sha1(header + data).hexdigest()
+        working_oid = hashlib.sha1(header + data).hexdigest()
 
-        if path in index:
-            if index[path] != oid:
-                unstaged.append(path)
-            else:
-                staged.append(path)
-        else:
+        in_index = path in index
+        in_commit = path in committed
+
+        if in_index and index[path] == working_oid:
+            staged.append(path)
+        elif in_index and index[path] != working_oid:
+            unstaged.append(path)
+        elif not in_index and in_commit and committed[path] != working_oid:
+            unstaged.append(path)
+        elif not in_index and not in_commit:
             untracked.append(path)
 
     print("Staged for commit:")
-    for path in staged:
-        print(f"  {path}")
+    for p in staged: print(f"  {p}")
+
     print("\nModified but not staged:")
-    for path in unstaged:
-        print(f"  {path}")
+    for p in unstaged: print(f"  {p}")
+
     print("\nUntracked files:")
-    for path in untracked:
-        print(f"  {path}")
+    for p in untracked: print(f"  {p}")
 
 def checkout(commit_hash):
     ref_path = os.path.join(GIT_DIR, "refs", "heads", commit_hash)
@@ -373,6 +406,34 @@ def create_branch(name):
         f.write(oid)
 
     print(f"Created branch {name} at {oid}")
+
+def branch(name):
+    head_ref = get_head_ref()
+    if not head_ref:
+        print("No commits to base branch on.")
+        return
+
+    branch_path = os.path.join(GIT_DIR, "refs", "heads", name)
+    os.makedirs(os.path.dirname(branch_path), exist_ok=True)
+    with open(branch_path, "w") as f:
+        f.write(head_ref)
+    print(f"Created branch {name}")
+
+def switch(branch):
+    branch_path = os.path.join(GIT_DIR, "refs", "heads", branch)
+    if not os.path.exists(branch_path):
+        print(f"Branch {branch} does not exist.")
+        return
+
+    with open(branch_path) as f:
+        commit_hash = f.read().strip()
+
+    checkout(commit_hash)
+
+    # Update HEAD to point to branch ref
+    with open(os.path.join(GIT_DIR, "HEAD"), "w") as f:
+        f.write(f"refs/heads/{branch}")
+    print(f"Switched to branch {branch}")
 
 if __name__ == "__main__":
     main()

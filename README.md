@@ -14,6 +14,10 @@ MyGit is a minimal, from-scratch Git clone built in Python. It implements essent
 - `mygit.py write-tree` — Write current staging index to a tree
 - `mygit.py checkout <commit-hash>` — Restore working directory to a previous commit
 - `mygit.py branch <name>` — Create a new branch from current commit
+-` mygit.py status` — Show modified, staged, and untracked files (now works like real Git!)
+- `mygit.py branch <name>` — Create a new branch
+- `mygit.py checkout <commit-hash|branch>` — Switch to a commit or branch
+
 
 ## Example Workflow
 
